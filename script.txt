@@ -1,0 +1,48 @@
+import pandas as pd
+import boto3, botocore.exceptions
+import matplotlib.pyplot as plt
+
+#Підключення до бакету
+def connect():
+    access_key_id = input(str("Enter your Access Key ID: "))
+    secret_access_key = input(str("Enter your Secret Access Key: "))
+    global s3
+    s3 = boto3.client('s3', aws_access_key_id = access_key_id, aws_secret_access_key = secret_access_key)
+
+#Завантаження файлів на бакет та з бакету
+def s3_upload(s3, filename, bucketname):
+    with open(filename, "rb") as f:
+        s3.upload_fileobj(f, bucketname, filename)
+
+def s3_download(s3, filename, bucketname):
+    s3.download_file(bucketname, filename, filename)
+
+#Зчитування необхідної нам інформації щодо курсу гривні
+def firstTask():    
+    df = pd.DataFrame({"Date":[], 'USD':[], 'EUR':[]})
+    dates = pd.Series(pd.date_range(start='1/1/2021', end='12/31/2021', freq='d'))
+    dates = dates.dt.strftime('%Y%m%d')
+    for date in dates:
+        df_t = pd.read_json(f'https://bank.gov.ua/NBUStatService/v1/statdirectory/exchange?date={date}&json')
+        df_t = pd.DataFrame({"Date":df_t[df_t['cc']=="USD"]['exchangedate'].values, 'USD':df_t[df_t['cc']=="USD"]['rate'].values, 'EUR':df_t[df_t['cc']=="EUR"]['rate'].values})
+        df = pd.concat([df,df_t], axis=0)
+    #CSV creation
+    df = df.reset_index(drop=True)
+    df.to_csv("data.csv", index=False)
+    
+#Побудова графіків
+def plot(df):
+    df.plot(x='Date', y=['USD', 'EUR'], figsize=(15, 7), title="UAH", fontsize=12)
+    plt.savefig('plot.png')
+
+connect()
+try:
+    s3_download(s3, 'data.csv', 'lab2bycket')
+except botocore.exceptions.ClientError:
+    firstTask()
+    s3_upload(s3, 'data.csv', 'lab2bycket')
+
+df = pd.read_csv("data.csv")
+print(df.head(10))
+plot(df)
+s3_upload(s3, 'plot.png', 'lab2bycket')
